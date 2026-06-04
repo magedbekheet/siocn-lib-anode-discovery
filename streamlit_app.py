@@ -1408,7 +1408,7 @@ def suggest_routes(
                 "closest_reference": "",
                 "closest_doi": "",
                 "source_note": (
-                    "Public template route: the private cleaned literature CSV is not loaded, "
+                    "Public template route: the full cleaned literature CSV is not loaded, "
                     "so no row-level analog or DOI is shown."
                 ),
                 "confidence": "template",
@@ -1810,7 +1810,7 @@ with tab_route:
     if using_public_reference and public_reference_kind == "curated":
         st.info(
             "Public deployment mode: route suggestions use a curated public analog table stored in the model bundle. "
-            "DOI/source links are shown for transparency, while the full private CSV and internal columns are not distributed."
+            "DOI/source links are shown for transparency, while the full cleaned CSV and extraction columns are not distributed."
         )
     elif using_public_reference and public_reference_kind == "aggregate":
         st.info(
@@ -1819,7 +1819,7 @@ with tab_route:
         )
     elif reference_engineered.empty:
         st.info(
-            "Public deployment mode: the private cleaned literature CSV is not loaded. "
+            "Public deployment mode: the full cleaned literature CSV is not loaded. "
             "The app therefore shows template precursor-family routes without row-level analogs, "
             "DOIs, or literature capacities."
         )
@@ -1983,7 +1983,7 @@ with tab_analogs:
         if using_public_reference and public_reference_kind == "curated":
             st.caption(
                 "Analog distance uses only elemental composition: Si, C, O, and N wt.%. "
-                "Rows are a curated public DOI/source subset stored in the model bundle; the full private CSV and internal columns are not distributed."
+                "Rows are a curated public DOI/source subset stored in the model bundle; the full cleaned CSV and extraction columns are not distributed."
             )
         elif using_public_reference and public_reference_kind == "aggregate":
             st.caption(

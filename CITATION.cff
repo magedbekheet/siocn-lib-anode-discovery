@@ -7,8 +7,8 @@ authors:
 date-released: "2026-06-04"
 year: 2026
 license: "MIT"
-repository-code: "https://github.com/magedbekheet/sioc-anode-discovery"
-url: "https://github.com/magedbekheet/sioc-anode-discovery"
+repository-code: "https://github.com/magedbekheet/siocn-lib-anode-discovery"
+url: "https://github.com/magedbekheet/siocn-lib-anode-discovery"
 abstract: "Leakage-controlled machine-learning and Streamlit workflow for screening polymer-derived SiOC/SiOCN lithium-ion battery anodes from composition and pyrolysis descriptors."
 keywords:
   - "SiOC"

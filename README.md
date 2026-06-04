@@ -30,7 +30,7 @@ pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-The cleaned literature CSVs are intentionally not included in the public repository. For local use, place the private working dataset at:
+The cleaned literature CSVs are intentionally not included in the public repository. For local reproduction, place the non-redistributed curated dataset at:
 
 ```text
 data/sioc_battery_capacity_clean_updated.csv
@@ -42,16 +42,16 @@ For deployment, the app needs the compact model bundle:
 models/sioc_app_target_models.joblib
 ```
 
-Other trained `.joblib` files are excluded. The app can run without the private CSV using sanitized public reference objects stored inside the model bundle: aggregate input-range statistics, aggregate route-family summaries, and a curated public literature-analog table with DOI/source metadata. The committed reports, figures, and model-summary CSVs document the final analysis without publishing the raw cleaned literature table.
+Other trained `.joblib` files are excluded. The app can run without the non-redistributed CSV using sanitized public reference objects stored inside the model bundle: aggregate input-range statistics, aggregate route-family summaries, and a curated public literature-analog table with DOI/source metadata. The committed reports, figures, and model-summary CSVs document the final analysis without publishing the raw cleaned literature table.
 
-For a public Streamlit deployment, do **not** commit the private CSV. The committed `sioc_app_target_models.joblib` contains trained pipelines, compact CV-summary tables, aggregate range statistics, aggregate route-family summaries, and a **public-safe analog subset** with only selected literature metadata needed for app transparency: precursor labels, Si/C/O/N composition, pyrolysis conditions, selected performance context, reference text, and DOI/source link. It does not contain internal notes, extraction columns, raw PDFs, electrolyte details, or the full private cleaned table. When the CSV is absent, the app still predicts performance, shows full training-range checks from aggregate statistics, suggests literature-guided route families, and lists nearest public DOI/source analogs.
+For a public Streamlit deployment, do **not** commit the non-redistributed CSV. The committed `sioc_app_target_models.joblib` contains trained pipelines, compact CV-summary tables, aggregate range statistics, aggregate route-family summaries, and a **public-safe analog subset** with only selected literature metadata needed for app transparency: precursor labels, Si/C/O/N composition, pyrolysis conditions, selected performance context, reference text, and DOI/source link. It does not contain extraction notes, raw PDFs, electrolyte details, or the full cleaned table. When the CSV is absent, the app still predicts performance, shows full training-range checks from aggregate statistics, suggests literature-guided route families, and lists nearest public DOI/source analogs.
 
 The deployed bundle follows the curated final dataset. The Wu 2022 high-capacity PMSQ + DVB series was examined as an external challenge case, but it is not part of the final training CSV because the current composition + pyrolysis descriptors do not explain that source well.
 
 The app uses a single composition-first workflow:
 
 - **Target material prediction**: enter Si/C/O/N wt.%, final pyrolysis temperature/time, optional BET surface area, and cycle number.
-- **Synthesis route guidance**: after prediction, inspect precursor/process routes. Public deployment uses the curated public analog subset for composition-matched literature context and DOI/source links; private local runs with the cleaned CSV can inspect the fuller internal table. These route suggestions do not change the predicted electrochemical values.
+- **Synthesis route guidance**: after prediction, inspect precursor/process routes. Public deployment uses the curated public analog subset for composition-matched literature context and DOI/source links; local runs with the cleaned CSV can inspect the fuller curated table. These route suggestions do not change the predicted electrochemical values.
 
 Elemental composition inputs are bounded by physical wt.% limits (`0-100`) rather than by the training-set extrema. This allows discovery of N-rich or otherwise new compositions. The app flags out-of-training compositions as extrapolative, so those predictions should be treated as hypotheses for synthesis and testing.
 
@@ -81,7 +81,7 @@ After prediction, the app can suggest chemically meaningful literature route fam
 - Explicit low-N additive routes such as polysiloxane + PVP/pyrrole, where nitrogen comes from the additive rather than the polysiloxane backbone.
 - Carbon-rich blends, silicone oil, polycarbosilane, polysilsesquioxane, and organopolysilane copolymer routes.
 
-The route table is filtered by a **family match (%)** score. This score asks whether that precursor family is chemically/compositionally plausible for the entered Si/C/O/N target. The matching distance uses only elemental composition (`Si`, `C`, `O`, `N` wt.%), so the suggested recipes are composition analogs rather than copied electrochemical performance. In public deployment without the private CSV, the same UI uses the curated public analog subset stored in the model bundle and shows DOI/source links where available. For N-containing targets, plain polysiloxanes are penalized unless an explicit PVP/pyrrole additive route is selected.
+The route table is filtered by a **family match (%)** score. This score asks whether that precursor family is chemically/compositionally plausible for the entered Si/C/O/N target. The matching distance uses only elemental composition (`Si`, `C`, `O`, `N` wt.%), so the suggested recipes are composition analogs rather than copied electrochemical performance. In public deployment without the full cleaned CSV, the same UI uses the curated public analog subset stored in the model bundle and shows DOI/source links where available. For N-containing targets, plain polysiloxanes are penalized unless an explicit PVP/pyrrole additive route is selected.
 
 ## Leakage-Controlled Feature Policy
 
@@ -194,7 +194,7 @@ jupyter nbconvert --to notebook --execute notebooks/05_final_clean_sioc_discover
   --ExecutePreprocessor.timeout=1200
 ```
 
-The executed notebook writes the final CSV summaries, figures, and model bundles used by the app. Reproduction requires the private cleaned literature dataset in `data/`.
+The executed notebook writes the final CSV summaries, figures, and model bundles used by the app. Full reproduction requires the non-redistributed cleaned literature dataset in `data/`.
 
 ## Recommended Interpretation
 
@@ -210,11 +210,11 @@ The safest final story is:
 
 ## Roadmap
 
-- Deploy the public Streamlit app with the compact model bundle and no private CSV.
+- Deploy the public Streamlit app with the compact model bundle and no full cleaned CSV.
 - Add a public app screenshot after deployment so readers see the interactive workflow immediately.
 - Expand the curated dataset with additional SiOC/SiOCN literature after manual quality control.
 - Add uncertainty communication for predictions near the edge of the training range.
-- Add an optional private analog-search backend for full literature-route suggestions without committing the raw dataset.
+- Add an optional restricted analog-search backend for full literature-route suggestions without committing the raw dataset.
 - Benchmark future descriptor sets for N-containing samples as more SiOCN data become available.
 
 ## License
@@ -230,12 +230,12 @@ If you use this workflow, app, figures, or model bundle in academic or technical
 ```text
 Maged Bekheet. SiOC/SiOCN Anode Discovery Modeling: leakage-controlled machine-learning
 and Streamlit workflow for polymer-derived lithium-ion battery anodes. GitHub repository,
-2026. https://github.com/magedbekheet/sioc-anode-discovery
+2026. https://github.com/magedbekheet/siocn-lib-anode-discovery
 ```
 
 For formal citation metadata, see [CITATION.cff](CITATION.cff).
 
-Please also cite the original literature sources for any experimental data, compositions, or synthesis routes used in downstream analysis. The private cleaned CSV is a curated literature-derived table and is not published in this repository.
+Please also cite the original literature sources for any experimental data, compositions, or synthesis routes used in downstream analysis. The full cleaned CSV is a curated literature-derived table and is not published in this repository.
 
 ## Disclaimer
 
