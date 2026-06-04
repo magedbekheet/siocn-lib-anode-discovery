@@ -29,6 +29,7 @@ IRREVERSIBLE_MODEL_PATH = Path("models/sioc_irreversible_capacity_model.joblib")
 CE_MODEL_PATH = Path("models/sioc_coulombic_efficiency_model.joblib")
 CE_DIAGNOSTIC_MODEL_PATH = Path("models/sioc_coulombic_efficiency_diagnostic_model.joblib")
 APP_TARGET_MODELS_PATH = Path("models/sioc_app_target_models.joblib")
+PUBLIC_ANALOG_KEY = "_public_literature_analogs_raw"
 PUBLIC_REFERENCE_KEY = "_public_reference_raw"
 PUBLIC_RANGE_STATS_KEY = "_public_range_stats"
 STABLE_TARGET = "cycling_reversible_capacity_mah_g"
@@ -366,13 +367,16 @@ def load_engineered_reference(path: Path) -> pd.DataFrame:
     return prepare_features(raw)
 
 
-def public_reference_from_bundle(bundle: dict | None) -> pd.DataFrame:
+def public_reference_from_bundle(bundle: dict | None) -> tuple[pd.DataFrame, str]:
     if not isinstance(bundle, dict):
-        return pd.DataFrame()
+        return pd.DataFrame(), ""
+    public_analogs = bundle.get(PUBLIC_ANALOG_KEY)
+    if isinstance(public_analogs, pd.DataFrame) and not public_analogs.empty:
+        return public_analogs.copy(), "curated"
     public_ref = bundle.get(PUBLIC_REFERENCE_KEY)
-    if isinstance(public_ref, pd.DataFrame):
-        return public_ref.copy()
-    return pd.DataFrame()
+    if isinstance(public_ref, pd.DataFrame) and not public_ref.empty:
+        return public_ref.copy(), "aggregate"
+    return pd.DataFrame(), ""
 
 
 def public_range_stats_from_bundle(bundle: dict | None) -> dict[str, dict[str, float]]:
@@ -1574,9 +1578,10 @@ if not isinstance(app_target_bundles, dict):
     }
 
 using_public_reference = False
+public_reference_kind = ""
 public_range_stats = {}
 if reference_raw.empty:
-    bundled_reference = public_reference_from_bundle(app_target_bundles)
+    bundled_reference, public_reference_kind = public_reference_from_bundle(app_target_bundles)
     public_range_stats = public_range_stats_from_bundle(app_target_bundles)
     if not bundled_reference.empty:
         reference_raw = bundled_reference
@@ -1802,7 +1807,12 @@ with tab_route:
         "These are recipe ideas for the already-predicted target composition. "
         "They do not change Qrev, CE, Qirrev, or Qcycled above."
     )
-    if using_public_reference:
+    if using_public_reference and public_reference_kind == "curated":
+        st.info(
+            "Public deployment mode: route suggestions use a curated public analog table stored in the model bundle. "
+            "DOI/source links are shown for transparency, while the full private CSV and internal columns are not distributed."
+        )
+    elif using_public_reference and public_reference_kind == "aggregate":
         st.info(
             "Public deployment mode: route suggestions use an aggregate reference library stored in the model bundle. "
             "The private row-level literature CSV is not loaded or exposed."
@@ -1846,7 +1856,12 @@ with tab_route:
     if routes_df.empty:
         st.info("No literature-guided synthesis routes were available for this composition.")
     else:
-        if using_public_reference:
+        if using_public_reference and public_reference_kind == "curated":
+            st.caption(
+                f"Using {len(composition_neighbors_df)} curated public analog sample(s), grouped into "
+                f"{len(routes_df)} synthesis route suggestion(s)."
+            )
+        elif using_public_reference and public_reference_kind == "aggregate":
             st.caption(
                 f"Using {len(composition_neighbors_df)} public aggregate reference route(s), representing "
                 f"{int(pd.to_numeric(composition_neighbors_df.get('sample_count', pd.Series(dtype=float)), errors='coerce').fillna(0).sum())} curated literature sample(s), "
@@ -1882,7 +1897,7 @@ with tab_route:
                 "median_literature_qcycled": st.column_config.NumberColumn("median literature Qcycled", format="%.0f"),
             },
         )
-        if using_public_reference:
+        if using_public_reference and public_reference_kind == "aggregate":
             st.caption(
                 "Route matching uses only Si/C/O/N composition distance. Aggregate capacity medians are shown only as context, "
                 "not as alternative predictions."
@@ -1949,7 +1964,13 @@ with tab_desc:
                 )
 
 with tab_analogs:
-    st.subheader("Nearest public aggregate analogs" if using_public_reference else "Nearest literature analogs")
+    if using_public_reference and public_reference_kind == "curated":
+        analog_title = "Nearest public literature analogs"
+    elif using_public_reference and public_reference_kind == "aggregate":
+        analog_title = "Nearest public aggregate analogs"
+    else:
+        analog_title = "Nearest literature analogs"
+    st.subheader(analog_title)
     target_n_for_analogs = float(engineered_input.loc[0, "n_wt_pct"]) if "n_wt_pct" in engineered_input.columns else 0.0
     if target_n_for_analogs >= 1.0:
         st.info("N-containing target detected. Literature analogs and recipe suggestions are restricted to N-containing rows when enough such examples exist.")
@@ -1959,7 +1980,12 @@ with tab_analogs:
     else:
         config = {"doi_link": st.column_config.LinkColumn("DOI / Source")} if "doi_link" in nearest.columns else {}
         st.dataframe(nearest, width="stretch", hide_index=True, column_config=config)
-        if using_public_reference:
+        if using_public_reference and public_reference_kind == "curated":
+            st.caption(
+                "Analog distance uses only elemental composition: Si, C, O, and N wt.%. "
+                "Rows are a curated public DOI/source subset stored in the model bundle; the full private CSV and internal columns are not distributed."
+            )
+        elif using_public_reference and public_reference_kind == "aggregate":
             st.caption(
                 "Analog distance uses only elemental composition: Si, C, O, and N wt.%. "
                 "Rows are aggregate public route-family summaries from the private curated dataset; no row-level CSV or DOI is exposed."

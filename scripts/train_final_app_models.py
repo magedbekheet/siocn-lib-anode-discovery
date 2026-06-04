@@ -25,7 +25,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.features import TARGET, prepare_features, read_sioc_csv  # noqa: E402
-from train_discovery_model import make_groups  # noqa: E402
 
 
 DATA_PATH = PROJECT_ROOT / "data" / "sioc_battery_capacity_clean_updated.csv"
@@ -38,6 +37,9 @@ RANDOM_STATE = 42
 STABLE_TARGET = "cycling_reversible_capacity_mah_g"
 CE_TARGET = "coulombic_efficiency_pct"
 IRREVERSIBLE_TARGET = "irreversible_capacity_mah_g"
+PUBLIC_ANALOG_KEY = "_public_literature_analogs_raw"
+PUBLIC_REFERENCE_KEY = "_public_reference_raw"
+PUBLIC_RANGE_STATS_KEY = "_public_range_stats"
 
 COMPOSITION_FEATURES = ["si_wt_pct", "c_wt_pct", "o_wt_pct", "n_wt_pct"]
 TEMP = ["pyrolysis_temp_c"]
@@ -66,6 +68,17 @@ DEPLOYED_STABLE = "B_stable_composition_T_time_cycle"
 SURFACE_STABLE = "D_surface_assisted_stable_composition_T_time_cycle"
 DEPLOYED_STABLE_DIAG = "E_stable_plus_first_capacity_diagnostic"
 SURFACE_STABLE_DIAG = "F_surface_assisted_stable_plus_first_capacity_diagnostic"
+
+
+def make_groups(df: pd.DataFrame) -> pd.Series:
+    """Prefer DOI groups for leakage-controlled CV; fall back to references, then row ids."""
+    if "doi" in df.columns:
+        groups = df["doi"].fillna("missing_doi").astype(str).str.strip().str.lower()
+    elif "reference" in df.columns:
+        groups = df["reference"].fillna("missing_reference").astype(str).str.strip().str.lower()
+    else:
+        groups = pd.Series(np.arange(len(df)), index=df.index).astype(str)
+    return groups.replace("", "missing_group")
 
 
 def public_polymer_template(family: str, dvb_modification: int = 0) -> str:
@@ -155,6 +168,71 @@ def build_public_reference_library(df: pd.DataFrame) -> pd.DataFrame:
     public_ref = pd.DataFrame(rows)
     public_ref = public_ref.sort_values(["sample_count", "polymer_family_broad"], ascending=[False, True]).reset_index(drop=True)
     return public_ref
+
+
+def build_public_literature_analog_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Create a DOI/source-enabled public analog table without internal/private columns."""
+    public_cols = [
+        "polymer",
+        "polymer_family_broad",
+        "precursor_family",
+        "dvb_modification",
+        "dvb_ratio_to_base",
+        "dvb_wt_pct_nominal",
+        "si_wt_pct",
+        "c_wt_pct",
+        "o_wt_pct",
+        "n_wt_pct",
+        "pyrolysis_temp_c",
+        "pyrolysis_time_h",
+        "pyrolysis_atmosphere",
+        "surface_area_m2_g",
+        TARGET,
+        IRREVERSIBLE_TARGET,
+        CE_TARGET,
+        STABLE_TARGET,
+        "cycling_numbers",
+        "capacity_retention_pct",
+        "reference",
+        "doi",
+    ]
+    present = [col for col in public_cols if col in df.columns]
+    if not present:
+        return pd.DataFrame()
+
+    analogs = df[present].copy()
+    analogs = analogs.dropna(subset=[col for col in COMPOSITION_FEATURES if col in analogs.columns], how="any")
+    if analogs.empty:
+        return pd.DataFrame()
+
+    numeric_cols = [
+        "dvb_modification",
+        "dvb_ratio_to_base",
+        "dvb_wt_pct_nominal",
+        *COMPOSITION_FEATURES,
+        "pyrolysis_temp_c",
+        "pyrolysis_time_h",
+        "surface_area_m2_g",
+        TARGET,
+        IRREVERSIBLE_TARGET,
+        CE_TARGET,
+        STABLE_TARGET,
+        "cycling_numbers",
+        "capacity_retention_pct",
+    ]
+    for col in numeric_cols:
+        if col in analogs.columns:
+            analogs[col] = pd.to_numeric(analogs[col], errors="coerce")
+
+    text_cols = ["polymer", "polymer_family_broad", "precursor_family", "pyrolysis_atmosphere", "reference", "doi"]
+    for col in text_cols:
+        if col in analogs.columns:
+            analogs[col] = analogs[col].fillna("").astype(str).str.strip()
+
+    analogs["sample_count"] = 1
+    analogs["is_public_curated_analog"] = True
+    analogs["is_public_aggregate"] = False
+    return analogs.reset_index(drop=True)
 
 
 def build_public_range_stats(df: pd.DataFrame) -> dict[str, dict[str, float]]:
@@ -389,8 +467,9 @@ def main() -> None:
             DEPLOYED_FIRST, {DEPLOYED_FIRST: FIRST_FEATURE_SETS[DEPLOYED_FIRST]}, irrev_results, irrev_best,
         ),
     }
-    app_bundles["_public_reference_raw"] = build_public_reference_library(df)
-    app_bundles["_public_range_stats"] = build_public_range_stats(df)
+    app_bundles[PUBLIC_ANALOG_KEY] = build_public_literature_analog_table(df)
+    app_bundles[PUBLIC_REFERENCE_KEY] = build_public_reference_library(df)
+    app_bundles[PUBLIC_RANGE_STATS_KEY] = build_public_range_stats(df)
 
     joblib.dump(app_bundles["first_reversible"], MODEL_DIR / "sioc_final_discovery_model.joblib")
     joblib.dump(app_bundles["first_reversible_surface"], MODEL_DIR / "sioc_final_discovery_surface_model.joblib")
@@ -407,11 +486,13 @@ def main() -> None:
     best_summary = pd.concat([first_best, stable_best, ce_best, irrev_best], ignore_index=True)
     summary.to_csv(REPORT_DIR / "final_simplified_model_cv_results.csv", index=False)
     best_summary.to_csv(REPORT_DIR / "final_simplified_model_best_by_feature_set.csv", index=False)
-    app_bundles["_public_reference_raw"].to_csv(REPORT_DIR / "public_aggregate_reference_library.csv", index=False)
+    app_bundles[PUBLIC_REFERENCE_KEY].to_csv(REPORT_DIR / "public_aggregate_reference_library.csv", index=False)
+    app_bundles[PUBLIC_ANALOG_KEY].to_csv(REPORT_DIR / "public_literature_analog_library.csv", index=False)
 
     print("Saved app bundle:", MODEL_DIR / "sioc_app_target_models.joblib")
-    print("Public aggregate reference rows:", len(app_bundles["_public_reference_raw"]))
-    print("Public range stat columns:", ", ".join(app_bundles["_public_range_stats"]))
+    print("Public literature analog rows:", len(app_bundles[PUBLIC_ANALOG_KEY]))
+    print("Public aggregate reference rows:", len(app_bundles[PUBLIC_REFERENCE_KEY]))
+    print("Public range stat columns:", ", ".join(app_bundles[PUBLIC_RANGE_STATS_KEY]))
     print(best_summary[["target", "cv_kind", "feature_set", "model", "mae_mean", "test_r2_mean"]].to_string(index=False))
 
 
