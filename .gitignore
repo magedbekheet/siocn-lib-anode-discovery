@@ -1,0 +1,49 @@
+# Python/runtime clutter
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*.pyo
+.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+*.log
+*Zone.Identifier*
+
+# Private / non-public datasets
+data/
+data/*.csv
+data/*.xlsx
+data/*.xls
+
+# Trained model bundles derived from private data
+models/*.joblib
+!models/sioc_app_target_models.joblib
+models/*.csv
+
+# Derived sample-level reports can expose private literature rows
+reports/*.csv
+reports/*.txt
+!reports/final_simplified_model_cv_results.csv
+!reports/final_simplified_model_best_by_feature_set.csv
+
+# Large or local notebook execution artifacts
+reports/executed_notebooks/
+
+# Development notebooks; keep the final clean notebook public
+notebooks/01_*.ipynb
+notebooks/02_*.ipynb
+notebooks/03_*.ipynb
+notebooks/04_*.ipynb
+!notebooks/05_final_clean_sioc_discovery_modeling.ipynb
+
+# Older one-off training/execution helpers; final scripts are listed in README
+train_model.py
+train_discovery_model.py
+DISCOVERY_PLAN.md
+scripts/create_final_clean_notebook.py
+scripts/run_stable_capacity_analysis.py
+scripts/execute_notebook_standard.py
+
+# Optional local app/cache artifacts
+.streamlit/
+!.streamlit/config.toml

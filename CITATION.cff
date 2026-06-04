@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this workflow, app, figures, or model bundle, please cite it as below."
+title: "SiOC/SiOCN Anode Discovery Modeling"
+authors:
+  - family-names: "Bekheet"
+    given-names: "Maged"
+date-released: "2026-06-04"
+year: 2026
+license: "MIT"
+repository-code: "https://github.com/magedbekheet/sioc-anode-discovery"
+url: "https://github.com/magedbekheet/sioc-anode-discovery"
+abstract: "Leakage-controlled machine-learning and Streamlit workflow for screening polymer-derived SiOC/SiOCN lithium-ion battery anodes from composition and pyrolysis descriptors."
+keywords:
+  - "SiOC"
+  - "SiOCN"
+  - "lithium-ion battery"
+  - "anode materials"
+  - "materials informatics"
+  - "machine learning"
+  - "Streamlit"
+  - "SHAP"
