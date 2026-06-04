@@ -157,6 +157,33 @@ def build_public_reference_library(df: pd.DataFrame) -> pd.DataFrame:
     return public_ref
 
 
+def build_public_range_stats(df: pd.DataFrame) -> dict[str, dict[str, float]]:
+    """Aggregate training-range statistics safe to ship with the public model bundle."""
+    cols = [
+        *COMPOSITION_FEATURES,
+        "pyrolysis_temp_c",
+        "pyrolysis_time_h",
+        "cycling_numbers",
+        "surface_area_m2_g",
+    ]
+    stats: dict[str, dict[str, float]] = {}
+    for col in cols:
+        if col not in df.columns:
+            continue
+        s = pd.to_numeric(df[col], errors="coerce").dropna()
+        if s.empty:
+            continue
+        stats[col] = {
+            "min": float(s.min()),
+            "q05": float(s.quantile(0.05)),
+            "median": float(s.median()),
+            "q95": float(s.quantile(0.95)),
+            "max": float(s.max()),
+            "n": int(len(s)),
+        }
+    return stats
+
+
 def make_model(name: str, cols: list[str]) -> Pipeline:
     models = {
         "Baseline mean": DummyRegressor(strategy="mean"),
@@ -363,6 +390,7 @@ def main() -> None:
         ),
     }
     app_bundles["_public_reference_raw"] = build_public_reference_library(df)
+    app_bundles["_public_range_stats"] = build_public_range_stats(df)
 
     joblib.dump(app_bundles["first_reversible"], MODEL_DIR / "sioc_final_discovery_model.joblib")
     joblib.dump(app_bundles["first_reversible_surface"], MODEL_DIR / "sioc_final_discovery_surface_model.joblib")
@@ -383,6 +411,7 @@ def main() -> None:
 
     print("Saved app bundle:", MODEL_DIR / "sioc_app_target_models.joblib")
     print("Public aggregate reference rows:", len(app_bundles["_public_reference_raw"]))
+    print("Public range stat columns:", ", ".join(app_bundles["_public_range_stats"]))
     print(best_summary[["target", "cv_kind", "feature_set", "model", "mae_mean", "test_r2_mean"]].to_string(index=False))
 
 

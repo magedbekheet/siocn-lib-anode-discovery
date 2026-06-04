@@ -30,6 +30,7 @@ CE_MODEL_PATH = Path("models/sioc_coulombic_efficiency_model.joblib")
 CE_DIAGNOSTIC_MODEL_PATH = Path("models/sioc_coulombic_efficiency_diagnostic_model.joblib")
 APP_TARGET_MODELS_PATH = Path("models/sioc_app_target_models.joblib")
 PUBLIC_REFERENCE_KEY = "_public_reference_raw"
+PUBLIC_RANGE_STATS_KEY = "_public_range_stats"
 STABLE_TARGET = "cycling_reversible_capacity_mah_g"
 IRREVERSIBLE_TARGET = "irreversible_capacity_mah_g"
 CE_TARGET = "coulombic_efficiency_pct"
@@ -374,6 +375,15 @@ def public_reference_from_bundle(bundle: dict | None) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def public_range_stats_from_bundle(bundle: dict | None) -> dict[str, dict[str, float]]:
+    if not isinstance(bundle, dict):
+        return {}
+    stats = bundle.get(PUBLIC_RANGE_STATS_KEY)
+    if isinstance(stats, dict):
+        return stats
+    return {}
+
+
 def normalize_doi(value: object) -> str:
     if pd.isna(value):
         return ""
@@ -386,7 +396,16 @@ def normalize_doi(value: object) -> str:
     return f"https://doi.org/{text}"
 
 
-def get_numeric_range(df: pd.DataFrame, col: str, fallback: tuple[float, float, float]) -> dict:
+def get_numeric_range(
+    df: pd.DataFrame,
+    col: str,
+    fallback: tuple[float, float, float],
+    range_stats: dict[str, dict[str, float]] | None = None,
+) -> dict:
+    if range_stats and col in range_stats:
+        stats = range_stats[col]
+        if all(k in stats for k in ["min", "q05", "median", "q95", "max"]):
+            return {k: float(stats[k]) for k in ["min", "q05", "median", "q95", "max"]}
     if col not in df.columns:
         mn, med, mx = fallback
         return {"min": mn, "q05": mn, "median": med, "q95": mx, "max": mx}
@@ -907,8 +926,14 @@ def render_phase_dashboard(engineered_input: pd.DataFrame) -> None:
     )
 
 
-def build_raw_input(reference: pd.DataFrame, engineered_ref: pd.DataFrame, selected_target: str, model_features: list[str]) -> tuple[pd.DataFrame, dict]:
-    ranges = {col: get_numeric_range(engineered_ref, col, fallback) for col, fallback in {
+def build_raw_input(
+    reference: pd.DataFrame,
+    engineered_ref: pd.DataFrame,
+    selected_target: str,
+    model_features: list[str],
+    range_stats: dict[str, dict[str, float]] | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    ranges = {col: get_numeric_range(engineered_ref, col, fallback, range_stats) for col, fallback in {
         "si_wt_pct": (0.0, 32.0, 62.0),
         "c_wt_pct": (0.0, 43.0, 100.0),
         "o_wt_pct": (0.0, 21.0, 76.0),
@@ -1166,8 +1191,13 @@ def graphite_comparison(capacity: float, graphite_capacity: float = 372.0) -> st
     return f"{abs(delta):.0f} mAh/g below graphite, about {ratio:.2f}x graphite's theoretical capacity ({graphite_capacity:.0f} mAh/g)."
 
 
-def build_composition_input(reference: pd.DataFrame, engineered_ref: pd.DataFrame, selected_target: str) -> tuple[pd.DataFrame, dict]:
-    ranges = {col: get_numeric_range(engineered_ref, col, fallback) for col, fallback in {
+def build_composition_input(
+    reference: pd.DataFrame,
+    engineered_ref: pd.DataFrame,
+    selected_target: str,
+    range_stats: dict[str, dict[str, float]] | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    ranges = {col: get_numeric_range(engineered_ref, col, fallback, range_stats) for col, fallback in {
         "si_wt_pct": (0.0, 32.0, 62.0),
         "c_wt_pct": (0.0, 43.0, 100.0),
         "o_wt_pct": (0.0, 21.0, 76.0),
@@ -1544,8 +1574,10 @@ if not isinstance(app_target_bundles, dict):
     }
 
 using_public_reference = False
+public_range_stats = {}
 if reference_raw.empty:
     bundled_reference = public_reference_from_bundle(app_target_bundles)
+    public_range_stats = public_range_stats_from_bundle(app_target_bundles)
     if not bundled_reference.empty:
         reference_raw = bundled_reference
         reference_engineered = prepare_features(bundled_reference)
@@ -1591,7 +1623,7 @@ active_features = list(qrev_bundle.get("feature_columns", []))
 st.markdown("<span class='boxed-label'>Target material prediction</span>", unsafe_allow_html=True)
 st.caption("Enter composition and final pyrolysis conditions first. Synthesis-route suggestions come later and do not change the prediction.")
 
-raw_input, ranges = build_raw_input(reference_raw, reference_engineered, selected_target, active_features)
+raw_input, ranges = build_raw_input(reference_raw, reference_engineered, selected_target, active_features, public_range_stats)
 engineered_input = prepare_features(raw_input)
 X_app = feature_matrix(engineered_input.copy(), active_bundle)
 prediction = float(active_bundle["model"].predict(X_app)[0])
@@ -1740,7 +1772,7 @@ with validity_col:
     ]:
         range_caption(label, float(engineered_input.loc[0, col]), ranges[col], unit)
     if use_surface_assisted:
-        surface_range = get_numeric_range(reference_engineered, "surface_area_m2_g", (0.0, 100.0, 1500.0))
+        surface_range = get_numeric_range(reference_engineered, "surface_area_m2_g", (0.0, 100.0, 1500.0), public_range_stats)
         range_caption("BET surface area", float(engineered_input.loc[0, "surface_area_m2_g"]), surface_range, "m2/g")
     range_caption("Cycle number", float(engineered_input.loc[0, "cycling_numbers"]), ranges["cycling_numbers"], "cycles")
 
