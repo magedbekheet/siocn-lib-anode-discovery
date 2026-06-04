@@ -68,6 +68,95 @@ DEPLOYED_STABLE_DIAG = "E_stable_plus_first_capacity_diagnostic"
 SURFACE_STABLE_DIAG = "F_surface_assisted_stable_plus_first_capacity_diagnostic"
 
 
+def public_polymer_template(family: str, dvb_modification: int = 0) -> str:
+    family_text = str(family).replace("_", " ").lower()
+    templates = [
+        ("polysilazane", "polyorganosilazane / polysilazane"),
+        ("silylcarbodiimide", "polyphenylvinylsilylcarbodiimide"),
+        ("polycarbosilane", "polycarbosilane PCS"),
+        ("polysilsesquioxane", "polysilsesquioxane PMS-derived resin"),
+        ("phtes teos", "phenyltriethoxysilane PhTES + tetraethoxysilane TEOS"),
+        ("prtes teos", "triethoxypropylsilane PrTES + tetraethoxysilane TEOS"),
+        ("phtes mtes", "phenyltriethoxysilane PhTES + methyltriethoxysilane MTES"),
+        ("phtes vtes", "phenyltriethoxysilane PhTES + vinyltriethoxysilane VTES"),
+        ("vtes mtes", "vinyltriethoxysilane VTES + methyltriethoxysilane MTES"),
+        ("phtes", "phenyltriethoxysilane PhTES-derived polysiloxane"),
+        ("vtes", "vinyltriethoxysilane VTES-derived polysiloxane"),
+        ("mtes", "methyltriethoxysilane MTES-derived polysiloxane"),
+        ("teos", "tetraethoxysilane TEOS-derived silica/polysiloxane"),
+        ("phenylalkyl polysiloxane", "methylvinylphenyl polysiloxane resin"),
+        ("phenyl polysiloxane", "phenyl polysiloxane resin"),
+        ("vinyl polysiloxane", "vinyl polysiloxane resin"),
+        ("alkyl polysiloxane", "alkyl/methyl polysiloxane resin"),
+        ("silicone oil", "silicone oil"),
+        ("carbon rich", "carbon-rich precursor blend"),
+        ("organopolysilane", "organopolysilane copolymer"),
+        ("polysiloxane", "generic polysiloxane resin"),
+    ]
+    base = "generic polymer-derived ceramic precursor"
+    for token, text in templates:
+        if token in family_text:
+            base = text
+            break
+    if int(dvb_modification or 0):
+        return f"{base} + DVB"
+    return base
+
+
+def build_public_reference_library(df: pd.DataFrame) -> pd.DataFrame:
+    """Create aggregate route/prediction context without exposing row-level literature data."""
+    group_cols = ["polymer_family_broad", "dvb_modification"]
+    required = ["polymer_family_broad", "dvb_modification", *COMPOSITION_FEATURES, "pyrolysis_temp_c", "pyrolysis_time_h"]
+    usable = df.dropna(subset=[c for c in required if c in df.columns]).copy()
+    if usable.empty:
+        return pd.DataFrame()
+
+    numeric_cols = [
+        *COMPOSITION_FEATURES,
+        "pyrolysis_temp_c",
+        "pyrolysis_time_h",
+        "surface_area_m2_g",
+        "cycling_numbers",
+        "first_cycling_current_ma_g",
+        "cycling_current_ma_g",
+        TARGET,
+        STABLE_TARGET,
+        CE_TARGET,
+        IRREVERSIBLE_TARGET,
+    ]
+    rows = []
+    for keys, group in usable.groupby(group_cols, dropna=False):
+        family, dvb_mod = keys
+        dvb_mod = int(0 if pd.isna(dvb_mod) else dvb_mod)
+        row = {
+            "polymer": public_polymer_template(str(family), dvb_mod),
+            "polymer_family_broad": str(family),
+            "dvb_modification": dvb_mod,
+            "pyrolysis_atmosphere": "inert",
+            "pre_pyrolysis_method": "none",
+            "crosslinking_method": "none",
+            "crosslink_temp_c": np.nan,
+            "crosslink_time_h": np.nan,
+            "crosslink_atmosphere": "unknown",
+            "voltage_min_v": 0.0,
+            "voltage_max_v": 3.0,
+            "voltage_window_v": 3.0,
+            "reference": f"Public aggregate route family, n={len(group)}",
+            "doi": "",
+            "sample_count": int(len(group)),
+            "is_public_aggregate": True,
+        }
+        for col in numeric_cols:
+            if col in group.columns:
+                values = pd.to_numeric(group[col], errors="coerce").dropna()
+                row[col] = float(values.median()) if not values.empty else np.nan
+        rows.append(row)
+
+    public_ref = pd.DataFrame(rows)
+    public_ref = public_ref.sort_values(["sample_count", "polymer_family_broad"], ascending=[False, True]).reset_index(drop=True)
+    return public_ref
+
+
 def make_model(name: str, cols: list[str]) -> Pipeline:
     models = {
         "Baseline mean": DummyRegressor(strategy="mean"),
@@ -273,6 +362,7 @@ def main() -> None:
             DEPLOYED_FIRST, {DEPLOYED_FIRST: FIRST_FEATURE_SETS[DEPLOYED_FIRST]}, irrev_results, irrev_best,
         ),
     }
+    app_bundles["_public_reference_raw"] = build_public_reference_library(df)
 
     joblib.dump(app_bundles["first_reversible"], MODEL_DIR / "sioc_final_discovery_model.joblib")
     joblib.dump(app_bundles["first_reversible_surface"], MODEL_DIR / "sioc_final_discovery_surface_model.joblib")
@@ -289,8 +379,10 @@ def main() -> None:
     best_summary = pd.concat([first_best, stable_best, ce_best, irrev_best], ignore_index=True)
     summary.to_csv(REPORT_DIR / "final_simplified_model_cv_results.csv", index=False)
     best_summary.to_csv(REPORT_DIR / "final_simplified_model_best_by_feature_set.csv", index=False)
+    app_bundles["_public_reference_raw"].to_csv(REPORT_DIR / "public_aggregate_reference_library.csv", index=False)
 
     print("Saved app bundle:", MODEL_DIR / "sioc_app_target_models.joblib")
+    print("Public aggregate reference rows:", len(app_bundles["_public_reference_raw"]))
     print(best_summary[["target", "cv_kind", "feature_set", "model", "mae_mean", "test_r2_mean"]].to_string(index=False))
 
 

@@ -29,6 +29,7 @@ IRREVERSIBLE_MODEL_PATH = Path("models/sioc_irreversible_capacity_model.joblib")
 CE_MODEL_PATH = Path("models/sioc_coulombic_efficiency_model.joblib")
 CE_DIAGNOSTIC_MODEL_PATH = Path("models/sioc_coulombic_efficiency_diagnostic_model.joblib")
 APP_TARGET_MODELS_PATH = Path("models/sioc_app_target_models.joblib")
+PUBLIC_REFERENCE_KEY = "_public_reference_raw"
 STABLE_TARGET = "cycling_reversible_capacity_mah_g"
 IRREVERSIBLE_TARGET = "irreversible_capacity_mah_g"
 CE_TARGET = "coulombic_efficiency_pct"
@@ -360,6 +361,15 @@ def load_engineered_reference(path: Path) -> pd.DataFrame:
     if raw.empty:
         return pd.DataFrame()
     return prepare_features(raw)
+
+
+def public_reference_from_bundle(bundle: dict | None) -> pd.DataFrame:
+    if not isinstance(bundle, dict):
+        return pd.DataFrame()
+    public_ref = bundle.get(PUBLIC_REFERENCE_KEY)
+    if isinstance(public_ref, pd.DataFrame):
+        return public_ref.copy()
+    return pd.DataFrame()
 
 
 def normalize_doi(value: object) -> str:
@@ -1078,7 +1088,8 @@ def nearest_literature_rows(raw_input: pd.DataFrame, reference: pd.DataFrame, ta
         "si_wt_pct", "c_wt_pct", "o_wt_pct", "n_wt_pct",
         "pyrolysis_temp_c", "pyrolysis_time_h",
         "cycling_numbers", TARGET, STABLE_TARGET,
-        "elemental_composition_distance", "composition_match_pct", "reference", "doi",
+        "sample_count", "elemental_composition_distance", "composition_match_pct",
+        "reference", "doi",
     ]
     keep = [c for c in keep if c in ref.columns]
     out = ref.sort_values("elemental_composition_distance").head(n)[keep].copy()
@@ -1090,15 +1101,20 @@ def nearest_literature_rows(raw_input: pd.DataFrame, reference: pd.DataFrame, ta
 def plot_prediction_context(reference: pd.DataFrame, target: str, pred: float) -> None:
     s = pd.to_numeric(reference.get(target, pd.Series(dtype=float)), errors="coerce").dropna()
     if s.empty:
+        st.info("Training/reference distribution is unavailable in this deployment.")
         return
+    weights = None
+    if "sample_count" in reference.columns:
+        weights = pd.to_numeric(reference.loc[s.index, "sample_count"], errors="coerce").fillna(1.0).clip(lower=1.0)
     fig, ax = plt.subplots(figsize=(8, 3.2))
-    ax.hist(s, bins=24, color="#5b8fb9", alpha=0.78, edgecolor="white")
+    ax.hist(s, bins=min(24, max(8, len(s))), weights=weights, color="#5b8fb9", alpha=0.78, edgecolor="white")
     ax.axvline(pred, color="#b42318", linewidth=2.2, label=f"Prediction: {pred:.0f}")
     ax.axvline(s.median(), color="#333333", linestyle="--", linewidth=1.3, label=f"Training median: {s.median():.0f}")
     ax.set_xlabel("Capacity (mAh/g)")
-    ax.set_ylabel("Count")
+    ax.set_ylabel("Weighted count" if weights is not None else "Count")
     ax.legend()
-    ax.set_title("Prediction relative to training distribution")
+    title = "Prediction relative to public aggregate reference distribution" if weights is not None else "Prediction relative to training distribution"
+    ax.set_title(title)
     st.pyplot(fig, clear_figure=True)
 
 
@@ -1406,7 +1422,8 @@ def suggest_routes(
         mean_distance = float(group["elemental_composition_distance"].mean())
         closest_distance = float(closest.get("elemental_composition_distance", np.nan))
         match_pct = float(closest.get("composition_match_pct", np.nan))
-        confidence = "high" if len(group) >= 5 and mean_distance <= 1.5 else "medium" if len(group) >= 2 else "low"
+        sample_support = int(pd.to_numeric(group.get("sample_count", pd.Series([1] * len(group))), errors="coerce").fillna(1).clip(lower=1).sum())
+        confidence = "high" if sample_support >= 5 and mean_distance <= 1.5 else "medium" if sample_support >= 2 else "low"
         family_match_pct = float(family_match.get(str(precursor_family), np.nan))
         recipe = (
             f"Use `{candidate.loc[0, 'polymer']}` "
@@ -1415,11 +1432,14 @@ def suggest_routes(
             f"for {float(candidate.loc[0, 'pyrolysis_time_h']):.2g} h under inert atmosphere."
         )
         doi_link = normalize_doi(closest.get("doi", ""))
-        source_note = (
-            f"Closest literature guide: [{closest_polymer}]({doi_link})."
-            if doi_link
-            else "Closest literature guide is listed in the Literature Analogs section."
-        )
+        if bool(closest.get("is_public_aggregate", False)):
+            source_note = "Public aggregate route family: no row-level literature entry or DOI is exposed in this deployment."
+        else:
+            source_note = (
+                f"Closest literature guide: [{closest_polymer}]({doi_link})."
+                if doi_link
+                else "Closest literature guide is listed in the Literature Analogs section."
+            )
         rows.append({
             "route": route_label(pd.Series({"polymer_family_broad": precursor_family, "dvb_modification": dvb_mod})),
             "suggested_polymer": candidate.loc[0, "polymer"],
@@ -1428,7 +1448,7 @@ def suggest_routes(
             "dvb_modification": "yes" if dvb_mod else "no",
             "pyrolysis_temp_c": float(candidate.loc[0, "pyrolysis_temp_c"]),
             "pyrolysis_time_h": float(candidate.loc[0, "pyrolysis_time_h"]),
-            "similar_samples": int(len(group)),
+            "similar_samples": sample_support,
             "mean_elemental_distance": mean_distance,
             "closest_elemental_distance": closest_distance,
             "match_pct": match_pct,
@@ -1487,6 +1507,14 @@ if not isinstance(app_target_bundles, dict):
         "stable_diagnostic": stable_diagnostic_bundle,
         "irreversible_diagnostic_only": irreversible_bundle,
     }
+
+using_public_reference = False
+if reference_raw.empty:
+    bundled_reference = public_reference_from_bundle(app_target_bundles)
+    if not bundled_reference.empty:
+        reference_raw = bundled_reference
+        reference_engineered = prepare_features(bundled_reference)
+        using_public_reference = True
 
 top_left, top_mid, top_right = st.columns([1.2, 1, 1])
 with top_left:
@@ -1707,7 +1735,12 @@ with tab_route:
         "These are recipe ideas for the already-predicted target composition. "
         "They do not change Qrev, CE, Qirrev, or Qcycled above."
     )
-    if reference_engineered.empty:
+    if using_public_reference:
+        st.info(
+            "Public deployment mode: route suggestions use an aggregate reference library stored in the model bundle. "
+            "The private row-level literature CSV is not loaded or exposed."
+        )
+    elif reference_engineered.empty:
         st.info(
             "Public deployment mode: the private cleaned literature CSV is not loaded. "
             "The app therefore shows template precursor-family routes without row-level analogs, "
@@ -1746,7 +1779,13 @@ with tab_route:
     if routes_df.empty:
         st.info("No literature-guided synthesis routes were available for this composition.")
     else:
-        if reference_engineered.empty:
+        if using_public_reference:
+            st.caption(
+                f"Using {len(composition_neighbors_df)} public aggregate reference route(s), representing "
+                f"{int(pd.to_numeric(composition_neighbors_df.get('sample_count', pd.Series(dtype=float)), errors='coerce').fillna(0).sum())} curated literature sample(s), "
+                f"grouped into {len(routes_df)} synthesis route suggestion(s)."
+            )
+        elif reference_engineered.empty:
             st.caption(
                 f"Using the public precursor-family template library to show "
                 f"{len(routes_df)} synthesis route suggestion(s)."
@@ -1776,10 +1815,16 @@ with tab_route:
                 "median_literature_qcycled": st.column_config.NumberColumn("median literature Qcycled", format="%.0f"),
             },
         )
-        st.caption(
-            "Route matching uses only Si/C/O/N composition distance. Literature capacities are shown only as context, "
-            "not as alternative predictions."
-        )
+        if using_public_reference:
+            st.caption(
+                "Route matching uses only Si/C/O/N composition distance. Aggregate capacity medians are shown only as context, "
+                "not as alternative predictions."
+            )
+        else:
+            st.caption(
+                "Route matching uses only Si/C/O/N composition distance. Literature capacities are shown only as context, "
+                "not as alternative predictions."
+            )
         top_route = routes_df.iloc[0]
         st.subheader("Top recipe idea")
         st.markdown(top_route["recipe"])
@@ -1837,7 +1882,7 @@ with tab_desc:
                 )
 
 with tab_analogs:
-    st.subheader("Nearest literature analogs")
+    st.subheader("Nearest public aggregate analogs" if using_public_reference else "Nearest literature analogs")
     target_n_for_analogs = float(engineered_input.loc[0, "n_wt_pct"]) if "n_wt_pct" in engineered_input.columns else 0.0
     if target_n_for_analogs >= 1.0:
         st.info("N-containing target detected. Literature analogs and recipe suggestions are restricted to N-containing rows when enough such examples exist.")
@@ -1847,7 +1892,13 @@ with tab_analogs:
     else:
         config = {"doi_link": st.column_config.LinkColumn("DOI / Source")} if "doi_link" in nearest.columns else {}
         st.dataframe(nearest, width="stretch", hide_index=True, column_config=config)
-        st.caption("Analog distance uses only elemental composition: Si, C, O, and N wt.%. Process and performance columns are shown only as literature context.")
+        if using_public_reference:
+            st.caption(
+                "Analog distance uses only elemental composition: Si, C, O, and N wt.%. "
+                "Rows are aggregate public route-family summaries from the private curated dataset; no row-level CSV or DOI is exposed."
+            )
+        else:
+            st.caption("Analog distance uses only elemental composition: Si, C, O, and N wt.%. Process and performance columns are shown only as literature context.")
 
 with tab_models:
     st.subheader("Workflow model bundles")

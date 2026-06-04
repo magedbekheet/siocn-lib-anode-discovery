@@ -42,16 +42,16 @@ For deployment, the app needs the compact model bundle:
 models/sioc_app_target_models.joblib
 ```
 
-Other trained `.joblib` files are excluded. The app can run without the private CSV using fallback input ranges, but literature analog tables and data-driven route suggestions are richer when the private CSV is available locally. The committed reports, figures, and model-summary CSVs document the final analysis without publishing the raw literature table.
+Other trained `.joblib` files are excluded. The app can run without the private CSV using a sanitized aggregate reference library stored inside the model bundle. Private local runs with the cleaned CSV can still show full row-level analog details. The committed reports, figures, and model-summary CSVs document the final analysis without publishing the raw literature table.
 
-For a public Streamlit deployment, do **not** embed the private CSV inside the model file. The committed `sioc_app_target_models.joblib` contains trained pipelines and compact CV-summary tables, not the row-level literature dataset. When the CSV is absent, the app still predicts performance and shows public template precursor-family routes; only the row-level analog table, DOI links, and data-driven recipe grouping are disabled. If you later want full analog search in a deployed app, load a private table from Streamlit secrets or private storage and avoid displaying protected row-level data directly.
+For a public Streamlit deployment, do **not** embed the private CSV inside the model file. The committed `sioc_app_target_models.joblib` contains trained pipelines, compact CV-summary tables, and aggregate route-family summaries. It does not contain the row-level literature dataset. When the CSV is absent, the app still predicts performance, shows an aggregate reference distribution, suggests literature-guided route families, and lists nearest aggregate analogs. If you later want full row-level analog search in a deployed app, load a private table from Streamlit secrets or private storage and avoid displaying protected row-level data directly.
 
 The deployed bundle follows the curated final dataset. The Wu 2022 high-capacity PMSQ + DVB series was examined as an external challenge case, but it is not part of the final training CSV because the current composition + pyrolysis descriptors do not explain that source well.
 
 The app uses a single composition-first workflow:
 
 - **Target material prediction**: enter Si/C/O/N wt.%, final pyrolysis temperature/time, optional BET surface area, and cycle number.
-- **Synthesis route guidance**: after prediction, inspect precursor/process routes. Public deployment uses template precursor-family routes; private local runs with the cleaned CSV add composition-matched literature analogs and DOI/source context. These route suggestions do not change the predicted electrochemical values.
+- **Synthesis route guidance**: after prediction, inspect precursor/process routes. Public deployment uses aggregate precursor-family summaries; private local runs with the cleaned CSV add row-level composition-matched literature analogs and DOI/source context. These route suggestions do not change the predicted electrochemical values.
 
 Predicted outputs:
 
@@ -79,7 +79,7 @@ After prediction, the app can suggest chemically meaningful literature route fam
 - Explicit low-N additive routes such as polysiloxane + PVP/pyrrole, where nitrogen comes from the additive rather than the polysiloxane backbone.
 - Carbon-rich blends, silicone oil, polycarbosilane, polysilsesquioxane, and organopolysilane copolymer routes.
 
-The route table is filtered by a **family match (%)** score. This score asks whether that precursor family is chemically/compositionally plausible for the entered Si/C/O/N target. With the private CSV loaded, the matching distance uses only elemental composition (`Si`, `C`, `O`, `N` wt.%), so the suggested recipes are composition analogs rather than copied electrochemical performance. In public deployment without the CSV, the same UI falls back to conservative template route families. For N-containing targets, plain polysiloxanes are penalized unless an explicit PVP/pyrrole additive route is selected.
+The route table is filtered by a **family match (%)** score. This score asks whether that precursor family is chemically/compositionally plausible for the entered Si/C/O/N target. With the private CSV loaded, the matching distance uses only elemental composition (`Si`, `C`, `O`, `N` wt.%), so the suggested recipes are composition analogs rather than copied electrochemical performance. In public deployment without the CSV, the same UI uses aggregate route-family summaries stored in the model bundle. For N-containing targets, plain polysiloxanes are penalized unless an explicit PVP/pyrrole additive route is selected.
 
 ## Leakage-Controlled Feature Policy
 
