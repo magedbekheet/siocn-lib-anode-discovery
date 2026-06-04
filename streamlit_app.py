@@ -36,6 +36,8 @@ CE_TARGET = "coulombic_efficiency_pct"
 LOW_RATE_FIRST_CURRENT_MA_G = 18.6
 LOW_RATE_CYCLING_CURRENT_MA_G = 37.2
 GRAPHITE_CAPACITY_MAH_G = 372.0
+ELEMENT_WT_PCT_MIN = 0.0
+ELEMENT_WT_PCT_MAX = 100.0
 
 TARGET_METADATA = {
     TARGET: {
@@ -420,10 +422,14 @@ def method_ranges(df: pd.DataFrame) -> dict[str, dict[str, float]]:
     return ranges
 
 
-def friendly_number(value: float) -> str:
+def friendly_number(value: float, integer: bool = False) -> str:
     if pd.isna(value):
         return "n/a"
     value = float(value)
+    if integer:
+        if value >= 0:
+            return f"{int(np.floor(value + 0.5))}"
+        return f"{int(np.ceil(value - 0.5))}"
     if abs(value) >= 100 or float(value).is_integer():
         return f"{value:.0f}"
     if abs(value) >= 10:
@@ -476,6 +482,7 @@ def safe_column_scales(df: pd.DataFrame, cols: list[str], fallback: float = 1.0)
 
 def range_caption(label: str, value: float, stats: dict, unit: str = "") -> None:
     unit_text = f" {unit}" if unit else ""
+    integer_range = unit in {"wt.%", "C", "cycles", "m2/g"}
     if stats["min"] <= value <= stats["max"]:
         cls = "range-ok"
         status = "inside training range"
@@ -484,10 +491,30 @@ def range_caption(label: str, value: float, stats: dict, unit: str = "") -> None
         status = "outside training range"
     st.markdown(
         f"<span class='{cls}'>{label}: {status}</span><br>"
-        f"<span class='small-muted'>Training range {friendly_number(stats['min'])}-{friendly_number(stats['max'])}{unit_text}; "
-        f"common range {friendly_number(stats['q05'])}-{friendly_number(stats['q95'])}{unit_text}.</span>",
+        f"<span class='small-muted'>Training range {friendly_number(stats['min'], integer_range)}-{friendly_number(stats['max'], integer_range)}{unit_text}; "
+        f"common range {friendly_number(stats['q05'], integer_range)}-{friendly_number(stats['q95'], integer_range)}{unit_text}.</span>",
         unsafe_allow_html=True,
     )
+
+
+def composition_extrapolation_note(values: dict[str, float], ranges: dict[str, dict[str, float]]) -> None:
+    outside = []
+    for col, label in [
+        ("si_wt_pct", "Si"),
+        ("c_wt_pct", "C"),
+        ("o_wt_pct", "O"),
+        ("n_wt_pct", "N"),
+    ]:
+        stats = ranges.get(col, {})
+        value = float(values.get(col, np.nan))
+        if np.isfinite(value) and stats and not (stats["min"] <= value <= stats["max"]):
+            outside.append(f"{label}={value:.1f} wt.%")
+    if outside:
+        st.warning(
+            "Discovery extrapolation: "
+            + ", ".join(outside)
+            + " is outside the current training/reference range. The app will still predict, but treat the result as a hypothesis."
+        )
 
 
 def method_to_raw_text(method: str) -> str:
@@ -892,16 +919,20 @@ def build_raw_input(reference: pd.DataFrame, engineered_ref: pd.DataFrame, selec
     }.items()}
     with st.sidebar:
         st.header("Material Input")
-        st.caption("Input ranges are bounded by the cleaned training data. Common ranges show the 5th-95th percentile.")
+        st.caption("Elemental wt.% inputs allow discovery compositions from 0-100. Range checks below show where the model is interpolating or extrapolating.")
 
         with st.expander("Composition", expanded=True):
-            si = st.number_input("Si wt.%", min_value=ranges["si_wt_pct"]["min"], max_value=ranges["si_wt_pct"]["max"], value=35.0, step=0.1)
-            c = st.number_input("C wt.%", min_value=ranges["c_wt_pct"]["min"], max_value=ranges["c_wt_pct"]["max"], value=45.0, step=0.1)
-            o = st.number_input("O wt.%", min_value=ranges["o_wt_pct"]["min"], max_value=ranges["o_wt_pct"]["max"], value=18.0, step=0.1)
-            n = st.number_input("N wt.%", min_value=ranges["n_wt_pct"]["min"], max_value=ranges["n_wt_pct"]["max"], value=0.0, step=0.1)
+            si = st.number_input("Si wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=35.0, step=0.1)
+            c = st.number_input("C wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=45.0, step=0.1)
+            o = st.number_input("O wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=18.0, step=0.1)
+            n = st.number_input("N wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=0.0, step=0.1)
             total = si + c + o + n
             if abs(total - 100) > 1.0:
                 st.warning(f"Si + C + O + N = {total:.1f} wt.%. The model was trained mostly on compositions close to 100 wt.%")
+            composition_extrapolation_note(
+                {"si_wt_pct": si, "c_wt_pct": c, "o_wt_pct": o, "n_wt_pct": n},
+                ranges,
+            )
 
         pre_method = "none"
         pre_temp = np.nan
@@ -1148,14 +1179,18 @@ def build_composition_input(reference: pd.DataFrame, engineered_ref: pd.DataFram
 
     with st.sidebar:
         st.header("Target Composition")
-        st.caption("Enter the desired elemental composition. The app searches literature-like routes that could plausibly reach nearby Si-O-C-N chemistry.")
-        si = st.number_input("Target Si wt.%", min_value=ranges["si_wt_pct"]["min"], max_value=ranges["si_wt_pct"]["max"], value=35.0, step=0.1)
-        c = st.number_input("Target C wt.%", min_value=ranges["c_wt_pct"]["min"], max_value=ranges["c_wt_pct"]["max"], value=45.0, step=0.1)
-        o = st.number_input("Target O wt.%", min_value=ranges["o_wt_pct"]["min"], max_value=ranges["o_wt_pct"]["max"], value=18.0, step=0.1)
-        n = st.number_input("Target N wt.%", min_value=ranges["n_wt_pct"]["min"], max_value=ranges["n_wt_pct"]["max"], value=0.0, step=0.1)
+        st.caption("Enter the desired elemental composition from 0-100 wt.%. Out-of-training values are allowed but flagged as extrapolative.")
+        si = st.number_input("Target Si wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=35.0, step=0.1)
+        c = st.number_input("Target C wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=45.0, step=0.1)
+        o = st.number_input("Target O wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=18.0, step=0.1)
+        n = st.number_input("Target N wt.%", min_value=ELEMENT_WT_PCT_MIN, max_value=ELEMENT_WT_PCT_MAX, value=0.0, step=0.1)
         total = si + c + o + n
         if abs(total - 100) > 1.0:
             st.warning(f"Si + C + O + N = {total:.1f} wt.%. Normalize or interpret this as an approximate target.")
+        composition_extrapolation_note(
+            {"si_wt_pct": si, "c_wt_pct": c, "o_wt_pct": o, "n_wt_pct": n},
+            ranges,
+        )
 
         st.header("Route Search")
         n_neighbors = st.slider("Similar literature samples", min_value=8, max_value=40, value=20, step=2)
@@ -1988,6 +2023,7 @@ with tab_notes:
     st.markdown(
         """
         - Enter Si, C, O, and N wt.% plus final pyrolysis temperature/time.
+        - Elemental compositions can be outside the current training range for discovery; the app flags these cases as extrapolative.
         - The app predicts Qrev and CE, then calculates Qirrev from `Qirrev = Qrev * (100 / CE% - 1)`.
         - Qcycled is predicted at 50, 100, or 200 cycles; apparent retention is `100 * Qcycled / Qrev`.
         - Default CE/Qcycled modes use predicted Qrev as a diagnostic input; measured-Qrev and design-only modes are optional.
