@@ -85,9 +85,81 @@ After prediction, the app can suggest chemically meaningful literature route fam
 
 The route table is filtered by a **family match (%)** score. This score asks whether that precursor family is chemically/compositionally plausible for the entered Si/C/O/N target. The matching distance uses only elemental composition (`Si`, `C`, `O`, `N` wt.%), so the suggested recipes are composition analogs rather than copied electrochemical performance. In public deployment without the full cleaned CSV, the same UI uses the curated public analog subset stored in the model bundle and shows DOI/source links where available. For N-containing targets, plain polysiloxanes are penalized unless an explicit PVP/pyrrole additive route is selected.
 
+## Leakage-Controlled Feature Policy
+
+The final deployed models avoid post-electrochemistry leakage. In earlier exploratory notebooks, features such as irreversible capacity, CE, cycled capacity, and retention could artificially improve reversible-capacity prediction because they are measured after electrochemical testing.
+
+The deployed first-cycle design model uses:
+
+- `si_wt_pct`
+- `c_wt_pct`
+- `o_wt_pct`
+- `n_wt_pct`
+- `pyrolysis_temp_c`
+- `pyrolysis_time_h`
+
+The optional surface-assisted model adds raw `surface_area_m2_g` when BET surface area is known. It does not use `log_surface_area_m2_g`.
+
+Current density, voltage window, pre-pyrolysis details, pyrolysis atmosphere, polymer family, and DVB loading are treated as context/route-recommendation descriptors rather than active deployed-model inputs. The cleaned literature table is dominated by low-current, 0-3 V, inert/protective pyrolysis rows, while polymer family and DVB can otherwise make the model change capacity even when elemental composition is unchanged.
+
+The app defaults to the diagnostic CE and cycled-capacity modes using predicted first-cycle `QRev`, because first-cycle behavior contains real information about irreversible loss and later capacity. Strict design-only CE and cycled-capacity modes remain available and are reported separately.
+
+Shuffle-split results are shown in the notebook and app **only as an optimistic diagnostic**. The deployed app uses the grouped-validation model policy, because random shuffling can place neighboring samples from the same paper or precursor series into both train and test folds.
+
+## Model Summary
+
+Main validation uses DOI/reference-grouped cross-validation. `QIrrev` is calculated in the app from `QRev` and CE rather than deployed as an independent prediction card.
+
+| Target | Deployed/Best Use | Model | Rows | Groups | MAE | R2 |
+|---|---:|---|---:|---:|---:|---:|
+| First-cycle `QRev` | Deployed design model: composition + pyrolysis | Gradient Boosting | 219 | 45 | 149.45 mAh/g | 0.362 |
+| First-cycle `QRev` | Optional surface-assisted model | Gradient Boosting | 219 | 45 | 146.65 mAh/g | 0.389 |
+| First-cycle CE | Design-only model | Random Forest | 205 | 45 | 8.08% | 0.324 |
+| First-cycle CE | **Default diagnostic model using predicted first-cycle `QRev`** | Random Forest | 205 | 45 | 7.54% | 0.400 |
+| `QCycled` | Design-only model: composition + pyrolysis + cycle number | Extra Trees | 123 | 37 | 172.49 mAh/g | -0.014 |
+| `QCycled` | Optional surface-assisted design model | Random Forest | 123 | 37 | 170.35 mAh/g | -0.029 |
+| `QCycled` | **Default diagnostic model using predicted first-cycle `QRev`** | Ridge | 123 | 37 | 123.09 mAh/g | 0.480 |
+| `QCycled` | Optional surface-assisted diagnostic model using first-cycle `QRev` | Gradient Boosting | 123 | 37 | 123.06 mAh/g | 0.424 |
+
+The shuffled-CV values are intentionally not used for selecting the deployed models. They are shown in the app/notebook as an upper-bound diagnostic for interpolation within known literature families.
+
+ANN/MLP benchmarks were tested but did not outperform tree/linear models under grouped validation. This is expected for a small, heterogeneous literature dataset.
+
+## Key Figures
+
+The README keeps a small curated figure set: target distribution, grouped-CV model fit, feature-set comparison, leakage diagnostics, residuals, and model explanation. The notebook contains the fuller analysis.
+
+### Target Distribution
+
+![Target capacity distribution](reports/figures/target_distribution.png)
+
+### Grouped-CV Feature-Set Comparison
+
+![Best feature sets by MAE](reports/figures/best_feature_sets_mae.png)
+
+### Model Fit: First-Cycle Design Model
+
+This plot shows predicted versus observed first-cycle reversible capacity for the leakage-controlled design-stage model.
+
+![Predicted vs observed first-cycle capacity](reports/figures/holdout_predicted_vs_observed_A_design_stage.png)
+
+### Leakage and Feature-Set Diagnostics
+
+![Leakage proxy correlations](reports/figures/leakage_proxy_correlations.png)
+
+### Residuals
+
+![Grouped-CV residuals](reports/figures/residual_distributions.png)
+
+### Model Explanation
+
+![SHAP summary for design-stage model](reports/figures/shap_summary_A_design_stage.png)
+
+![Tree importance for design-stage model](reports/figures/tree_importance_A_design_stage.png)
+
 ## Self-Driving Lab / MAP Extension
 
-The project now includes an SDL/MAP-style next-experiment recommendation prototype inspired by modern closed-loop materials discovery workflows. It follows general self-driving-lab ideas: candidate generation, Bayesian-optimization-style acquisition, novelty/domain scoring, human-reviewed experiment manifests, measurement ingestion, and iterative recommendation.
+Building on the prediction models above, the project includes an SDL/MAP-style next-experiment recommendation prototype inspired by modern closed-loop materials discovery workflows. It follows general self-driving-lab ideas: candidate generation, Bayesian-optimization-style acquisition, novelty/domain scoring, human-reviewed experiment manifests, measurement ingestion, and iterative recommendation.
 
 The extension uses only the committed public model bundle. It:
 
@@ -189,78 +261,6 @@ notebooks/07_sdl_closed_loop_retraining_demo.ipynb
 The manifest follows [schemas/sioc_sdl_experiment.schema.json](schemas/sioc_sdl_experiment.schema.json). It separates steps suitable for automated liquid handling, mixing, heating, sonication, washing, and metadata capture from external or future modules for drying, inert pyrolysis, solid dosing, electrode fabrication, cell assembly, and electrochemical testing.
 
 This is a decision-support layer, not an autonomous hardware-control system. Precursor selection, hardware compatibility, safety constraints, synthesis feasibility, and all proposed experiments require expert review before execution.
-
-## Leakage-Controlled Feature Policy
-
-The final deployed models avoid post-electrochemistry leakage. In earlier exploratory notebooks, features such as irreversible capacity, CE, cycled capacity, and retention could artificially improve reversible-capacity prediction because they are measured after electrochemical testing.
-
-The deployed first-cycle design model uses:
-
-- `si_wt_pct`
-- `c_wt_pct`
-- `o_wt_pct`
-- `n_wt_pct`
-- `pyrolysis_temp_c`
-- `pyrolysis_time_h`
-
-The optional surface-assisted model adds raw `surface_area_m2_g` when BET surface area is known. It does not use `log_surface_area_m2_g`.
-
-Current density, voltage window, pre-pyrolysis details, pyrolysis atmosphere, polymer family, and DVB loading are treated as context/route-recommendation descriptors rather than active deployed-model inputs. The cleaned literature table is dominated by low-current, 0-3 V, inert/protective pyrolysis rows, while polymer family and DVB can otherwise make the model change capacity even when elemental composition is unchanged.
-
-The app defaults to the diagnostic CE and cycled-capacity modes using predicted first-cycle `QRev`, because first-cycle behavior contains real information about irreversible loss and later capacity. Strict design-only CE and cycled-capacity modes remain available and are reported separately.
-
-Shuffle-split results are shown in the notebook and app **only as an optimistic diagnostic**. The deployed app uses the grouped-validation model policy, because random shuffling can place neighboring samples from the same paper or precursor series into both train and test folds.
-
-## Model Summary
-
-Main validation uses DOI/reference-grouped cross-validation. `QIrrev` is calculated in the app from `QRev` and CE rather than deployed as an independent prediction card.
-
-| Target | Deployed/Best Use | Model | Rows | Groups | MAE | R2 |
-|---|---:|---|---:|---:|---:|---:|
-| First-cycle `QRev` | Deployed design model: composition + pyrolysis | Gradient Boosting | 219 | 45 | 149.45 mAh/g | 0.362 |
-| First-cycle `QRev` | Optional surface-assisted model | Gradient Boosting | 219 | 45 | 146.65 mAh/g | 0.389 |
-| First-cycle CE | Design-only model | Random Forest | 205 | 45 | 8.08% | 0.324 |
-| First-cycle CE | **Default diagnostic model using predicted first-cycle `QRev`** | Random Forest | 205 | 45 | 7.54% | 0.400 |
-| `QCycled` | Design-only model: composition + pyrolysis + cycle number | Extra Trees | 123 | 37 | 172.49 mAh/g | -0.014 |
-| `QCycled` | Optional surface-assisted design model | Random Forest | 123 | 37 | 170.35 mAh/g | -0.029 |
-| `QCycled` | **Default diagnostic model using predicted first-cycle `QRev`** | Ridge | 123 | 37 | 123.09 mAh/g | 0.480 |
-| `QCycled` | Optional surface-assisted diagnostic model using first-cycle `QRev` | Gradient Boosting | 123 | 37 | 123.06 mAh/g | 0.424 |
-
-The shuffled-CV values are intentionally not used for selecting the deployed models. They are shown in the app/notebook as an upper-bound diagnostic for interpolation within known literature families.
-
-ANN/MLP benchmarks were tested but did not outperform tree/linear models under grouped validation. This is expected for a small, heterogeneous literature dataset.
-
-## Key Figures
-
-The README keeps a small curated figure set: target distribution, grouped-CV model fit, feature-set comparison, leakage diagnostics, residuals, and model explanation. The notebook contains the fuller analysis.
-
-### Target Distribution
-
-![Target capacity distribution](reports/figures/target_distribution.png)
-
-### Grouped-CV Feature-Set Comparison
-
-![Best feature sets by MAE](reports/figures/best_feature_sets_mae.png)
-
-### Model Fit: First-Cycle Design Model
-
-This plot shows predicted versus observed first-cycle reversible capacity for the leakage-controlled design-stage model.
-
-![Predicted vs observed first-cycle capacity](reports/figures/holdout_predicted_vs_observed_A_design_stage.png)
-
-### Leakage and Feature-Set Diagnostics
-
-![Leakage proxy correlations](reports/figures/leakage_proxy_correlations.png)
-
-### Residuals
-
-![Grouped-CV residuals](reports/figures/residual_distributions.png)
-
-### Model Explanation
-
-![SHAP summary for design-stage model](reports/figures/shap_summary_A_design_stage.png)
-
-![Tree importance for design-stage model](reports/figures/tree_importance_A_design_stage.png)
 
 ## Project Structure
 
@@ -384,7 +384,3 @@ Good contribution types include:
 - model-card style discussion of limitations and uncertainty
 
 Please do not commit private literature tables, copyrighted PDFs, large local artifacts, or model files other than the compact deployment bundle documented in this README.
-
-## Notes for GitHub Push
-
-Generated Python caches, private datasets, sample-level report files, and Windows `Zone.Identifier` sidecar files should not be committed. For Streamlit deployment, keep `models/sioc_app_target_models.joblib`; ignore the other development model bundles. The public app can run from this model bundle without the raw dataset. The project should keep the final notebook, app, model summaries, and selected report figures so readers can reproduce the modeling discussion.

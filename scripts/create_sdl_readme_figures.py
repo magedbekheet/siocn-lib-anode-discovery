@@ -108,17 +108,27 @@ def save_candidate_search_figure() -> None:
 
 
 def draw_box(ax, x: float, y: float, label: str, color: str) -> None:
+    box_width = 0.18
+    box_height = 0.13
     box = FancyBboxPatch(
         (x, y),
-        0.22,
-        0.16,
-        boxstyle="round,pad=0.02,rounding_size=0.03",
+        box_width,
+        box_height,
+        boxstyle="round,pad=0.015,rounding_size=0.025",
         linewidth=1.6,
         edgecolor=color,
         facecolor="#f8fafc",
     )
     ax.add_patch(box)
-    ax.text(x + 0.11, y + 0.08, label, ha="center", va="center", fontsize=10.2, weight="bold")
+    ax.text(
+        x + box_width / 2,
+        y + box_height / 2,
+        label,
+        ha="center",
+        va="center",
+        fontsize=9.3,
+        weight="bold",
+    )
 
 
 def draw_arrow(ax, start: tuple[float, float], end: tuple[float, float]) -> None:
@@ -138,7 +148,7 @@ def draw_arrow(ax, start: tuple[float, float], end: tuple[float, float]) -> None
 def save_closed_loop_workflow_figure() -> None:
     """Draw the human-reviewed closed-loop SDL workflow."""
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(13, 5.8), dpi=170)
+    fig, ax = plt.subplots(figsize=(11.6, 5.2), dpi=170)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
@@ -164,24 +174,26 @@ def save_closed_loop_workflow_figure() -> None:
     )
 
     boxes = {
-        "candidate": (0.03, 0.58, "Generate\n2,800 candidates", "#0f766e"),
-        "gp": (0.28, 0.58, "GP expected\nimprovement", "#0369a1"),
-        "rank": (0.53, 0.58, "Rank + select\nTop 10", "#c2410c"),
-        "manifest": (0.77, 0.58, "Human-reviewed\nmanifest", "#7c3aed"),
-        "synthesis": (0.77, 0.25, "Synthesize +\ncharacterize", "#64748b"),
-        "measure": (0.52, 0.25, "Measure QRev,\nCE, Qcycled", "#64748b"),
-        "store": (0.27, 0.25, "Store optional\ncharacterization", "#64748b"),
+        "candidate": (0.06, 0.61, "Generate\n2,800 candidates", "#0f766e"),
+        "gp": (0.29, 0.61, "GP expected\nimprovement", "#0369a1"),
+        "rank": (0.52, 0.61, "Rank + select\nTop 10", "#c2410c"),
+        "manifest": (0.75, 0.61, "Human-reviewed\nmanifest", "#7c3aed"),
+        "synthesis": (0.75, 0.32, "Synthesize +\ncharacterize", "#64748b"),
+        "measure": (0.52, 0.32, "Measure QRev,\nCE, Qcycled", "#64748b"),
+        "store": (0.29, 0.32, "Store optional\ncharacterization", "#64748b"),
+        "update": (0.06, 0.32, "Update GP\nacquisition", "#64748b"),
     }
     for x, y, label, color in boxes.values():
         draw_box(ax, x, y, label, color)
 
-    draw_arrow(ax, (0.25, 0.66), (0.28, 0.66))
-    draw_arrow(ax, (0.50, 0.66), (0.53, 0.66))
-    draw_arrow(ax, (0.75, 0.66), (0.77, 0.66))
-    draw_arrow(ax, (0.88, 0.58), (0.88, 0.41))
-    draw_arrow(ax, (0.77, 0.33), (0.74, 0.33))
-    draw_arrow(ax, (0.52, 0.33), (0.49, 0.33))
-    draw_arrow(ax, (0.38, 0.41), (0.39, 0.58))
+    draw_arrow(ax, (0.24, 0.675), (0.29, 0.675))
+    draw_arrow(ax, (0.47, 0.675), (0.52, 0.675))
+    draw_arrow(ax, (0.70, 0.675), (0.75, 0.675))
+    draw_arrow(ax, (0.84, 0.61), (0.84, 0.45))
+    draw_arrow(ax, (0.75, 0.385), (0.70, 0.385))
+    draw_arrow(ax, (0.52, 0.385), (0.47, 0.385))
+    draw_arrow(ax, (0.29, 0.385), (0.24, 0.385))
+    draw_arrow(ax, (0.15, 0.45), (0.35, 0.61))
 
     ax.text(
         0.5,
