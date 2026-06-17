@@ -28,6 +28,7 @@ reports/*.txt
 
 # Large or local notebook execution artifacts
 reports/executed_notebooks/
+reports/sdl_runs/
 
 # Development notebooks; keep the final clean notebook public
 notebooks/01_*.ipynb

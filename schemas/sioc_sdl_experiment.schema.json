@@ -1,0 +1,593 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magedbekheet/siocn-lib-anode-discovery/schemas/sioc_sdl_experiment.schema.json",
+  "title": "SiOC/SiOCN SDL Experiment Manifest",
+  "description": "Structured next-experiment recommendations for human-reviewed self-driving-lab and ELN workflows.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at_utc",
+    "workflow",
+    "model_bundle",
+    "selection",
+    "experiments"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workflow": {
+      "type": "string"
+    },
+    "model_bundle": {
+      "type": "string"
+    },
+    "acquisition_method": {
+      "type": "string"
+    },
+    "novelty_method": {
+      "enum": [
+        "legacy",
+        "mahalanobis",
+        "kde",
+        "hybrid"
+      ]
+    },
+    "input_data_hash": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "parent_manifest": {
+      "type": "string"
+    },
+    "measurement_provenance": {
+      "$ref": "#/$defs/measurement_provenance"
+    },
+    "failed_experiments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/failed_experiment"
+      }
+    },
+    "replicate_statistics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/replicate_statistic"
+      }
+    },
+    "reference_row_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_count",
+        "suggestion_count",
+        "exploration_fraction",
+        "exploration_weight",
+        "cycle_number"
+      ],
+      "properties": {
+        "candidate_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "suggestion_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exploration_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "exploration_weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "cycle_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "acquisition_method": {
+          "type": "string"
+        },
+        "novelty_method": {
+          "enum": [
+            "legacy",
+            "mahalanobis",
+            "kde",
+            "hybrid"
+          ]
+        }
+      }
+    },
+    "experiments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/experiment"
+      }
+    }
+  },
+  "$defs": {
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "recommendation_rank",
+        "status",
+        "objective",
+        "target_composition_wt_pct",
+        "process",
+        "predicted_performance",
+        "acquisition",
+        "literature_context",
+        "automation_plan",
+        "characterization_plan",
+        "reproducibility_plan",
+        "provenance"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string"
+        },
+        "recommendation_rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "const": "proposed_human_review_required"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "target_composition_wt_pct": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "si",
+            "c",
+            "o",
+            "n",
+            "sum"
+          ],
+          "properties": {
+            "si": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "c": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "o": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "n": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "sum": {
+              "type": "number",
+              "minimum": 99.9,
+              "maximum": 100.1
+            }
+          }
+        },
+        "process": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pyrolysis_temperature_c",
+            "pyrolysis_time_h",
+            "pyrolysis_atmosphere",
+            "cycle_number_for_prediction"
+          ],
+          "properties": {
+            "pyrolysis_temperature_c": {
+              "type": "number",
+              "minimum": 0
+            },
+            "pyrolysis_time_h": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "pyrolysis_atmosphere": {
+              "type": "string"
+            },
+            "cycle_number_for_prediction": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "predicted_performance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "qrev_mah_g",
+            "qirrev_mah_g",
+            "ce_pct",
+            "qcycled_mah_g",
+            "apparent_retention_pct"
+          ],
+          "properties": {
+            "qrev_mah_g": {
+              "type": "number",
+              "minimum": 0
+            },
+            "qirrev_mah_g": {
+              "type": "number",
+              "minimum": 0
+            },
+            "ce_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "qcycled_mah_g": {
+              "type": "number",
+              "minimum": 0
+            },
+            "apparent_retention_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        "acquisition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "score_pct",
+            "performance_score_pct",
+            "exploration_score_pct",
+            "gp_qrev_std_mah_g",
+            "expected_improvement_mah_g",
+            "domain_confidence_pct",
+            "pareto_front"
+          ],
+          "properties": {
+            "method": {
+              "type": "string"
+            },
+            "novelty_method": {
+              "enum": [
+                "legacy",
+                "mahalanobis",
+                "kde",
+                "hybrid"
+              ]
+            },
+            "score_pct": {
+              "type": "number"
+            },
+            "performance_score_pct": {
+              "type": "number"
+            },
+            "exploration_score_pct": {
+              "type": "number"
+            },
+            "gp_qrev_std_mah_g": {
+              "type": "number",
+              "minimum": 0
+            },
+            "expected_improvement_mah_g": {
+              "type": "number",
+              "minimum": 0
+            },
+            "domain_confidence_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "novelty_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "legacy_design_domain_distance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "legacy_domain_confidence_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "legacy_novelty_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "mahalanobis_distance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "mahalanobis_domain_confidence_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "mahalanobis_novelty_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "kde_log_density": {
+              "type": "number"
+            },
+            "kde_domain_confidence_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "kde_novelty_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "hybrid_domain_confidence_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "hybrid_novelty_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "pareto_front": {
+              "type": "boolean"
+            }
+          }
+        },
+        "literature_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role",
+            "composition_match_pct",
+            "polymer",
+            "precursor_family",
+            "reference",
+            "doi_url"
+          ],
+          "properties": {
+            "role": {
+              "type": "string"
+            },
+            "composition_match_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "polymer": {
+              "type": "string"
+            },
+            "precursor_family": {
+              "type": "string"
+            },
+            "reference": {
+              "type": "string"
+            },
+            "doi_url": {
+              "type": "string"
+            }
+          }
+        },
+        "automation_plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "execution_level",
+            "steps"
+          ],
+          "properties": {
+            "execution_level": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operation",
+                  "mode"
+                ],
+                "properties": {
+                  "operation": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "characterization_plan": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reproducibility_plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "replicate_batches",
+            "report_batch_mean_and_standard_deviation",
+            "record_failed_or_deviating_runs"
+          ],
+          "properties": {
+            "replicate_batches": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "report_batch_mean_and_standard_deviation": {
+              "type": "boolean"
+            },
+            "record_failed_or_deviating_runs": {
+              "type": "boolean"
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model_bundle",
+            "model_policy",
+            "candidate_origin"
+          ],
+          "properties": {
+            "model_bundle": {
+              "type": "string"
+            },
+            "model_policy": {
+              "type": "string"
+            },
+            "acquisition_reference_policy": {
+              "type": "string"
+            },
+            "candidate_origin": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "measurement_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measurement_file",
+        "measurement_history_file",
+        "measurement_file_hash",
+        "accepted_measurement_experiments",
+        "production_models_updated",
+        "stored_characterization_fields"
+      ],
+      "properties": {
+        "measurement_file": {
+          "type": "string"
+        },
+        "measurement_history_file": {
+          "type": "string"
+        },
+        "measurement_file_hash": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "ingested_at_utc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "accepted_measurement_experiments": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "production_models_updated": {
+          "const": false
+        },
+        "stored_characterization_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "failed_experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "measurement_status",
+        "measurement_quality_flag"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string"
+        },
+        "replicate_id": {
+          "type": "string"
+        },
+        "measurement_status": {
+          "enum": [
+            "failed",
+            "partial",
+            "excluded"
+          ]
+        },
+        "measurement_quality_flag": {
+          "enum": [
+            "pass",
+            "warning",
+            "fail",
+            "not_assessed"
+          ]
+        },
+        "failure_reason": {
+          "type": "string"
+        }
+      }
+    },
+    "replicate_statistic": {
+      "type": "object",
+      "required": [
+        "experiment_id",
+        "replicate_count",
+        "completed_replicates",
+        "failed_replicates"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string"
+        },
+        "replicate_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "completed_replicates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_replicates": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": {
+        "type": [
+          "number",
+          "integer",
+          "string",
+          "null"
+        ]
+      }
+    }
+  }
+}

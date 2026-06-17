@@ -5,6 +5,8 @@
 [![machine learning](https://img.shields.io/badge/machine%20learning-scikit--learn-f7931e)](https://scikit-learn.org/)
 [![materials informatics](https://img.shields.io/badge/materials-informatics-236f68)](#)
 [![battery materials](https://img.shields.io/badge/lithium--ion-anodes-174f59)](#)
+[![self-driving lab](https://img.shields.io/badge/self--driving%20lab-MAP-0f766e)](#)
+[![bayesian optimization](https://img.shields.io/badge/Bayesian%20optimization-GP%20acquisition-0369a1)](#)
 [![explainable AI](https://img.shields.io/badge/explainable%20AI-SHAP-6f42c1)](https://shap.readthedocs.io/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -82,6 +84,111 @@ After prediction, the app can suggest chemically meaningful literature route fam
 - Carbon-rich blends, silicone oil, polycarbosilane, polysilsesquioxane, and organopolysilane copolymer routes.
 
 The route table is filtered by a **family match (%)** score. This score asks whether that precursor family is chemically/compositionally plausible for the entered Si/C/O/N target. The matching distance uses only elemental composition (`Si`, `C`, `O`, `N` wt.%), so the suggested recipes are composition analogs rather than copied electrochemical performance. In public deployment without the full cleaned CSV, the same UI uses the curated public analog subset stored in the model bundle and shows DOI/source links where available. For N-containing targets, plain polysiloxanes are penalized unless an explicit PVP/pyrrole additive route is selected.
+
+## Self-Driving Lab / MAP Extension
+
+The project now includes an SDL/MAP-style next-experiment recommendation prototype inspired by modern closed-loop materials discovery workflows. It follows general self-driving-lab ideas: candidate generation, Bayesian-optimization-style acquisition, novelty/domain scoring, human-reviewed experiment manifests, measurement ingestion, and iterative recommendation.
+
+The extension uses only the committed public model bundle. It:
+
+- generates local and exploratory SiOC/SiOCN compositions with bounded Si/C/N contents and a configurable default pyrolysis window of 800-1400 C for 0.5-6 h,
+- predicts design-stage `QRev`, CE, `QIrrev`, and `QCycled`,
+- fits a Gaussian-process uncertainty layer for expected-improvement screening,
+- combines performance, uncertainty, configurable novelty/domain scoring, and Pareto status,
+- selects a diverse set of proposed experiments,
+- attaches the composition-nearest public literature context and DOI,
+- exports a structured JSON manifest for expert review, ELN capture, and future robot integration,
+- requests replicate batches so reproducibility is treated as an experimental output.
+
+The GitHub demo configuration screens exactly **2,800 generated candidate material/process
+designs** and selects the **top 10 proposed experiments**. The ranking is Bayesian-optimization
+style: a Gaussian-process acquisition layer estimates QRev uncertainty and expected improvement,
+then combines this with predicted performance, novelty, domain confidence, Pareto status, and
+diversity. All suggestions remain `proposed_human_review_required`.
+
+![SDL Bayesian candidate search](reports/figures/sdl_bayesian_candidate_search.png)
+
+![Closed-loop SDL workflow](reports/figures/sdl_closed_loop_workflow.png)
+
+Novelty scoring supports four modes:
+
+- `legacy`: standardized nearest-neighbor distance; the backward-compatible default.
+- `mahalanobis`: covariance-aware distance estimated with Ledoit-Wolf shrinkage.
+- `kde`: Gaussian kernel-density novelty.
+- `hybrid`: equal combination of Mahalanobis and KDE novelty percentiles.
+
+Run the command-line workflow:
+
+```bash
+python scripts/suggest_next_experiments.py \
+  --n-candidates 2800 \
+  --n-suggestions 10 \
+  --cycle-number 100 \
+  --novelty-method hybrid
+```
+
+The CLI default is `2,500` candidates for a faster local run; the README figures use the explicit
+`2,800`-candidate demo command above.
+
+Generated outputs are written to the ignored local directory `reports/sdl_runs/`:
+
+```text
+ranked_candidate_space.csv
+next_experiments.csv
+experiment_manifest.json
+```
+
+The explainable initial-recommendation demonstration is available in:
+
+```text
+notebooks/06_sdl_active_learning_extension.ipynb
+```
+
+### Closed-Loop Measurement Update
+
+The closed-loop extension accepts measured replicates from a previous recommendation batch,
+appends them to a versioned measurement history, updates only the GP acquisition/reference
+layer, and generates a new ranked batch:
+
+```bash
+python scripts/update_sdl_with_measurements.py \
+  --prior-manifest reports/sdl_runs/experiment_manifest.json \
+  --recommendations reports/sdl_runs/next_experiments.csv \
+  --measurements path/to/measured_results.csv \
+  --novelty-method hybrid
+```
+
+Measurement rows are joined by `experiment_id` or `candidate_id`. Supported status values are
+`completed`, `failed`, `partial`, and `excluded`; quality flags are `pass`, `warning`, `fail`,
+and `not_assessed`. Optional stored characterization fields are:
+
+```text
+crystallinity_pct
+grain_size_nm
+bet_surface_area_m2_g
+raman_d_g_ratio
+pore_volume_cm3_g
+```
+
+These characterization values are stored for provenance and future model development. They are
+explicitly removed before current production feature engineering. Completed, non-failing measured
+`QRev` values update only the fixed-kernel GP acquisition and novelty/reference layers; the
+deployed QRev, CE, and `QCycled` models are neither retrained nor replaced.
+
+Each update exports a new recommendation CSV, JSON manifest, `run_metadata.json`, cumulative
+`measurement_history.csv`, and a timestamped history snapshot. Failed experiments and replicate
+statistics remain visible in the manifest. All new candidates retain
+`status = proposed_human_review_required`.
+
+The complete mock-measurement workflow is demonstrated in:
+
+```text
+notebooks/07_sdl_closed_loop_retraining_demo.ipynb
+```
+
+The manifest follows [schemas/sioc_sdl_experiment.schema.json](schemas/sioc_sdl_experiment.schema.json). It separates steps suitable for automated liquid handling, mixing, heating, sonication, washing, and metadata capture from external or future modules for drying, inert pyrolysis, solid dosing, electrode fabrication, cell assembly, and electrochemical testing.
+
+This is a decision-support layer, not an autonomous hardware-control system. Precursor selection, hardware compatibility, safety constraints, synthesis feasibility, and all proposed experiments require expert review before execution.
 
 ## Leakage-Controlled Feature Policy
 
@@ -162,19 +269,31 @@ This plot shows predicted versus observed first-cycle reversible capacity for th
 ├── models/
 │   ├── sioc_app_target_models.joblib
 ├── notebooks/
-│   └── 05_final_clean_sioc_discovery_modeling.ipynb
+│   ├── 05_final_clean_sioc_discovery_modeling.ipynb
+│   ├── 06_sdl_active_learning_extension.ipynb
+│   └── 07_sdl_closed_loop_retraining_demo.ipynb
 ├── reports/
 │   ├── figures/
 │   ├── final_simplified_model_best_by_feature_set.csv
 │   ├── final_simplified_model_cv_results.csv
 │   ├── final_feature_policy.md
 │   └── notebook_run_comparison.md
+├── schemas/
+│   └── sioc_sdl_experiment.schema.json
 ├── scripts/
 │   ├── create_final_explainable_notebook.py
+│   ├── create_sdl_closed_loop_notebook.py
+│   ├── create_sdl_extension_notebook.py
+│   ├── create_sdl_readme_figures.py
+│   ├── suggest_next_experiments.py
 │   ├── train_final_app_models.py
+│   ├── update_sdl_with_measurements.py
 │   └── update_report_figures.py
 ├── src/
-│   └── features.py
+│   ├── features.py
+│   └── sdl.py
+├── tests/
+│   └── test_sdl_closed_loop.py
 ├── streamlit_app.py
 ├── CITATION.cff
 ├── LICENSE
@@ -196,6 +315,12 @@ jupyter nbconvert --to notebook --execute notebooks/05_final_clean_sioc_discover
 
 The executed notebook writes the final CSV summaries, figures, and model bundles used by the app. Full reproduction requires the non-redistributed cleaned literature dataset in `data/`.
 
+Run the lightweight SDL validation suite with:
+
+```bash
+python -m unittest tests.test_sdl_closed_loop -v
+```
+
 ## Recommended Interpretation
 
 Use the app and final notebook as a **decision-support tool**, not as a replacement for synthesis/characterization. The grouped-CV errors are still large because the dataset is small and heterogeneous, especially for N-doped and cycled-capacity subsets.
@@ -216,6 +341,9 @@ The safest final story is:
 - Add uncertainty communication for predictions near the edge of the training range.
 - Add an optional restricted analog-search backend for full literature-route suggestions without committing the raw dataset.
 - Benchmark future descriptor sets for N-containing samples as more SiOCN data become available.
+- Connect the closed-loop manifest and measurement history to an ELN/LIMS endpoint and validated laboratory hardware adapters.
+- Replace fixed candidate-pool screening with sequential Bayesian optimization after a larger internally consistent experimental campaign.
+- Add validated external modules for inert pyrolysis, solid dosing, electrode fabrication, and electrochemical testing.
 
 ## License
 
